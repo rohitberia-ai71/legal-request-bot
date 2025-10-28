@@ -1,25 +1,23 @@
 // ===============================
-// AI71 Legal Request Bot
+// AI71 Legal Request Bot (CommonJS version)
 // ===============================
 
-import { App } from "@slack/bolt";
-import express from "express";
-import fetch from "node-fetch";
+const { App } = require("@slack/bolt");
+const express = require("express");
+const fetch = require("node-fetch");
 
+// Initialize Slack Bolt App
 const app = new App({
-  token: process.env.SLACK_BOT_TOKEN, // starts with xoxb-
-  signingSecret: process.env.SLACK_SIGNING_SECRET, // from Slack App
+  token: process.env.SLACK_BOT_TOKEN,
+  signingSecret: process.env.SLACK_SIGNING_SECRET,
   socketMode: false,
-  appToken: process.env.SLACK_APP_TOKEN, // optional for events
   port: process.env.PORT || 3000
 });
 
-// Your Google Apps Script Web App URL
 const APPS_SCRIPT_URL = process.env.APPS_SCRIPT_URL;
 
 // ===============================
 // Slash command: /legal
-// Opens a modal for submitting new requests
 // ===============================
 app.command("/legal", async ({ ack, body, client }) => {
   await ack();
@@ -29,120 +27,81 @@ app.command("/legal", async ({ ack, body, client }) => {
       view: {
         type: "modal",
         callback_id: "legal_request_form",
-        title: {
-          type: "plain_text",
-          text: "New Legal Request"
-        },
-        submit: {
-          type: "plain_text",
-          text: "Submit"
-        },
-        close: {
-          type: "plain_text",
-          text: "Cancel"
-        },
+        title: { type: "plain_text", text: "New Legal Request" },
+        submit: { type: "plain_text", text: "Submit" },
+        close: { type: "plain_text", text: "Cancel" },
         blocks: [
           {
             type: "input",
             block_id: "type_block",
-            label: {
-              type: "plain_text",
-              text: "Request Type"
-            },
+            label: { type: "plain_text", text: "Request Type" },
             element: {
               type: "static_select",
               action_id: "request_type",
-              placeholder: {
-                type: "plain_text",
-                text: "Select a request type"
-              },
+              placeholder: { type: "plain_text", text: "Select request type" },
               options: [
-                {
-                  text: { type: "plain_text", text: "Procurement" },
-                  value: "Procurement"
-                },
-                {
-                  text: { type: "plain_text", text: "Revenue / Collaboration" },
-                  value: "Revenue / Collaboration"
-                },
-                {
-                  text: { type: "plain_text", text: "Other" },
-                  value: "Other"
-                }
+                { text: { type: "plain_text", text: "Procurement" }, value: "Procurement" },
+                { text: { type: "plain_text", text: "Revenue / Collaboration" }, value: "Revenue / Collaboration" },
+                { text: { type: "plain_text", text: "Other" }, value: "Other" }
               ]
             }
           },
           {
             type: "input",
             block_id: "counterparty_block",
-            label: {
-              type: "plain_text",
-              text: "Counterparty"
-            },
+            label: { type: "plain_text", text: "Counterparty" },
             element: {
               type: "plain_text_input",
               action_id: "counterparty_input",
-              placeholder: {
-                type: "plain_text",
-                text: "Enter counterparty name"
-              }
+              placeholder: { type: "plain_text", text: "Enter counterparty name" }
             }
           },
           {
             type: "input",
             block_id: "description_block",
-            label: {
-              type: "plain_text",
-              text: "Description"
-            },
+            label: { type: "plain_text", text: "Description" },
             element: {
               type: "plain_text_input",
               action_id: "description_input",
               multiline: true,
-              placeholder: {
-                type: "plain_text",
-                text: "Briefly describe the request"
-              }
+              placeholder: { type: "plain_text", text: "Briefly describe the request" }
             }
           }
         ]
       }
     });
-  } catch (error) {
-    console.error("❌ Error opening modal:", error);
+  } catch (err) {
+    console.error("❌ Error opening modal:", err);
   }
 });
 
 // ===============================
-// Modal submission handler
+// Handle form submission
 // ===============================
 app.view("legal_request_form", async ({ ack, body, view, client }) => {
   await ack();
   try {
     const user = body.user.name;
-    const channel = body.channel?.id || process.env.DEFAULT_CHANNEL_ID;
     const requestType = view.state.values.type_block.request_type.selected_option.value;
     const counterparty = view.state.values.counterparty_block.counterparty_input.value;
     const description = view.state.values.description_block.description_input.value;
 
-    // Post a summary message in Slack
-    const result = await client.chat.postMessage({
-      channel: process.env.LEGAL_CHANNEL_ID || channel,
+    const post = await client.chat.postMessage({
+      channel: process.env.LEGAL_CHANNEL_ID,
       text: `🧾 *New Legal Request Submitted by* ${user}`,
       blocks: [
         {
           type: "section",
           text: {
             type: "mrkdwn",
-            text: `🧾 *New Legal Request Submitted by* ${user}\n\n• *Type:* ${requestType}\n• *Counterparty:* ${counterparty}\n• *Description:* ${description}`
+            text: `🧾 *New Legal Request Submitted by* ${user}\n• *Type:* ${requestType}\n• *Counterparty:* ${counterparty}\n• *Description:* ${description}`
           }
         }
       ]
     });
 
-    const threadTs = result.ts;
+    const threadTs = post.ts;
 
-    // Send to Apps Script for folder creation, email, Notion logging
     await fetch(APPS_SCRIPT_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -152,27 +111,25 @@ app.view("legal_request_form", async ({ ack, body, view, client }) => {
         counterparty,
         description,
         submittedBy: user,
-        channel: result.channel,
+        channel: post.channel,
         thread_ts: threadTs
       })
     });
 
-    // Post confirmation in thread
     await client.chat.postMessage({
-      channel: result.channel,
+      channel: post.channel,
       thread_ts: threadTs,
-      text: "✅ Request recorded successfully. Please attach all relevant documents in this thread."
+      text: "✅ Request logged successfully. You can now attach supporting documents in this thread."
     });
-
-  } catch (error) {
-    console.error("❌ Error handling modal submission:", error);
+  } catch (err) {
+    console.error("❌ Error submitting request:", err);
   }
 });
 
 // ===============================
-// File upload listener (detects attachments in the thread)
+// Handle file uploads in thread
 // ===============================
-app.event("message", async ({ event, client, logger }) => {
+app.event("message", async ({ event, client }) => {
   try {
     if (event.subtype !== "file_share") return;
     if (!event.thread_ts) return;
@@ -180,11 +137,9 @@ app.event("message", async ({ event, client, logger }) => {
     const file = event.files?.[0];
     if (!file) return;
 
-    // Get downloadable URL
     const info = await client.files.info({ file: file.id });
     const url = info.file.url_private_download;
 
-    // Forward to Apps Script
     await fetch(APPS_SCRIPT_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -197,26 +152,24 @@ app.event("message", async ({ event, client, logger }) => {
       })
     });
 
-    // Confirm upload in Slack
     await client.chat.postMessage({
       channel: event.channel,
       thread_ts: event.thread_ts,
-      text: `📎 File *${file.name}* uploaded and saved successfully.`
+      text: `📎 File *${file.name}* uploaded and sent to Drive/Notion.`
     });
-
-  } catch (error) {
-    logger.error("❌ File upload handler error:", error);
+  } catch (err) {
+    console.error("❌ File upload error:", err);
   }
 });
 
 // ===============================
-// Express receiver for Slack events
+// Express setup for Slack Events
 // ===============================
 const expressApp = express();
 expressApp.use(express.json());
 expressApp.post("/slack/events", app.receiver.app);
-expressApp.get("/", (req, res) => res.send("AI71 Legal Request Bot is running ✅"));
+expressApp.get("/", (req, res) => res.send("AI71 Legal Request Bot is live ✅"));
 
 app.start(process.env.PORT || 3000).then(() => {
-  console.log("⚡️ Slack Bolt app is running on port", process.env.PORT || 3000);
+  console.log("⚡️ AI71 Legal Request Bot running");
 });
