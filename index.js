@@ -1,19 +1,27 @@
 // ===============================
-// AI71 Legal Request Bot (CommonJS version)
+// AI71 Legal Request Bot (Fixed for Render + CommonJS)
 // ===============================
 
-const { App } = require("@slack/bolt");
+const { App, ExpressReceiver } = require("@slack/bolt");
 const express = require("express");
 const fetch = require("node-fetch");
 
-// Initialize Slack Bolt App
-const app = new App({
-  token: process.env.SLACK_BOT_TOKEN,
-  signingSecret: process.env.SLACK_SIGNING_SECRET,
-  socketMode: false,
-  port: process.env.PORT || 3000
+// -------------------------------
+// 1. Initialize a custom receiver
+// -------------------------------
+const receiver = new ExpressReceiver({
+  signingSecret: process.env.SLACK_SIGNING_SECRET
 });
 
+// -------------------------------
+// 2. Create Slack Bolt App
+// -------------------------------
+const app = new App({
+  token: process.env.SLACK_BOT_TOKEN,
+  receiver
+});
+
+const expressApp = receiver.app; // use Bolt’s internal express app
 const APPS_SCRIPT_URL = process.env.APPS_SCRIPT_URL;
 
 // ===============================
@@ -38,7 +46,6 @@ app.command("/legal", async ({ ack, body, client }) => {
             element: {
               type: "static_select",
               action_id: "request_type",
-              placeholder: { type: "plain_text", text: "Select request type" },
               options: [
                 { text: { type: "plain_text", text: "Procurement" }, value: "Procurement" },
                 { text: { type: "plain_text", text: "Revenue / Collaboration" }, value: "Revenue / Collaboration" },
@@ -52,8 +59,7 @@ app.command("/legal", async ({ ack, body, client }) => {
             label: { type: "plain_text", text: "Counterparty" },
             element: {
               type: "plain_text_input",
-              action_id: "counterparty_input",
-              placeholder: { type: "plain_text", text: "Enter counterparty name" }
+              action_id: "counterparty_input"
             }
           },
           {
@@ -63,8 +69,7 @@ app.command("/legal", async ({ ack, body, client }) => {
             element: {
               type: "plain_text_input",
               action_id: "description_input",
-              multiline: true,
-              placeholder: { type: "plain_text", text: "Briefly describe the request" }
+              multiline: true
             }
           }
         ]
@@ -76,7 +81,7 @@ app.command("/legal", async ({ ack, body, client }) => {
 });
 
 // ===============================
-// Handle form submission
+// Modal submission handler
 // ===============================
 app.view("legal_request_form", async ({ ack, body, view, client }) => {
   await ack();
@@ -119,7 +124,7 @@ app.view("legal_request_form", async ({ ack, body, view, client }) => {
     await client.chat.postMessage({
       channel: post.channel,
       thread_ts: threadTs,
-      text: "✅ Request logged successfully. You can now attach supporting documents in this thread."
+      text: "✅ Request recorded. Please upload related files in this thread."
     });
   } catch (err) {
     console.error("❌ Error submitting request:", err);
@@ -127,12 +132,11 @@ app.view("legal_request_form", async ({ ack, body, view, client }) => {
 });
 
 // ===============================
-// Handle file uploads in thread
+// File upload event handler
 // ===============================
 app.event("message", async ({ event, client }) => {
   try {
-    if (event.subtype !== "file_share") return;
-    if (!event.thread_ts) return;
+    if (event.subtype !== "file_share" || !event.thread_ts) return;
 
     const file = event.files?.[0];
     if (!file) return;
@@ -155,21 +159,22 @@ app.event("message", async ({ event, client }) => {
     await client.chat.postMessage({
       channel: event.channel,
       thread_ts: event.thread_ts,
-      text: `📎 File *${file.name}* uploaded and sent to Drive/Notion.`
+      text: `📎 File *${file.name}* uploaded successfully.`
     });
   } catch (err) {
-    console.error("❌ File upload error:", err);
+    console.error("❌ File upload handler error:", err);
   }
 });
 
 // ===============================
-// Express setup for Slack Events
+// Health check endpoint for Render
 // ===============================
-const expressApp = express();
-expressApp.use(express.json());
-expressApp.post("/slack/events", app.receiver.app);
-expressApp.get("/", (req, res) => res.send("AI71 Legal Request Bot is live ✅"));
+expressApp.get("/", (req, res) => res.send("✅ AI71 Legal Request Bot is live"));
 
-app.start(process.env.PORT || 3000).then(() => {
-  console.log("⚡️ AI71 Legal Request Bot running");
-});
+// ===============================
+// Start server
+// ===============================
+(async () => {
+  await app.start(process.env.PORT || 3000);
+  console.log("⚡️ AI71 Legal Request Bot running on port", process.env.PORT || 3000);
+})();
