@@ -85,43 +85,53 @@ app.command("/legal", async ({ ack, body, client, logger }) => {
 // --------------  VIEW SUBMISSION HANDLER --------------
 app.view("legal_request_form", async ({ ack, body, view, client, logger }) => {
   try {
-    // ✅ Acknowledge immediately so Slack doesn’t time out
+    // ✅ Step 1: Acknowledge immediately so Slack doesn't timeout
     await ack();
 
-    // Extract form data
+    // ✅ Step 2: Extract form data safely
     const user = body.user.name;
     const requestType =
-      view.state.values.request_type_block.request_type.selected_option.value;
+      view.state.values.request_type_block.request_type.selected_option?.value || "not selected";
     const counterparty =
-      view.state.values.counterparty_block.counterparty_input.value;
+      view.state.values.counterparty_block.counterparty_input?.value || "N/A";
     const description =
-      view.state.values.description_block.description_input.value;
+      view.state.values.description_block.description_input?.value || "N/A";
 
-    // 1️⃣ Post a quick Slack confirmation
+    // ✅ Step 3: Post confirmation to Slack
     await client.chat.postMessage({
-      channel: "#legal-intake",
-      text: `📥 *New Legal Request Submitted*\n• *Type:* ${requestType}\n• *Counterparty:* ${counterparty}\n• *Submitted by:* ${user}`
+      channel: "#legal-intake", // change if needed
+      text: `📥 *New Legal Request Submitted*\n• *Type:* ${requestType}\n• *Counterparty:* ${counterparty}\n• *Description:* ${description}\n• *Submitted by:* ${user}`,
     });
 
-    // 2️⃣ Call your Apps Script webhook (for Drive folder, Notion, Gmail)
-    if (process.env.APPS_SCRIPT_URL) {
-      await fetch(process.env.APPS_SCRIPT_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          requestType,
-          counterparty,
-          description,
-          user
-        })
-      });
-    } else {
-      logger.info("No APPS_SCRIPT_URL found, skipping webhook.");
-    }
+    // ✅ Step 4: Run async webhook *without blocking*
+    (async () => {
+      try {
+        if (process.env.APPS_SCRIPT_URL) {
+          const fetch = (await import("node-fetch")).default;
+          await fetch(process.env.APPS_SCRIPT_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              requestType,
+              counterparty,
+              description,
+              user,
+              timestamp: new Date().toISOString(),
+            }),
+          });
+        } else {
+          logger.info("No APPS_SCRIPT_URL set; skipping webhook.");
+        }
+      } catch (err) {
+        logger.error("Webhook call failed:", err);
+      }
+    })();
+
   } catch (error) {
-    logger.error(error);
+    logger.error("Submission error:", error);
   }
 });
+
 
 // --------------  START APP --------------
 (async () => {
