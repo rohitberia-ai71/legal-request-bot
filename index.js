@@ -1,6 +1,35 @@
 const { App } = require("@slack/bolt");
 const fetch = require("node-fetch");
 
+app.event("file_shared", async ({ event, client, logger }) => {
+  try {
+    const file = event.file;
+    const user = event.user_id;
+    const channel = event.channel_id;
+
+    // Fetch file info
+    const fileInfo = await client.files.info({ file: file.id });
+    const fileUrl = fileInfo.file.url_private_download;
+
+    // Log for debugging
+    logger.info(`File uploaded: ${fileInfo.file.name}`);
+
+    // Send to Apps Script webhook for upload
+    await fetch("YOUR_APPS_SCRIPT_WEBAPP_URL", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type: "file_upload",
+        fileName: fileInfo.file.name,
+        fileUrl: fileUrl,
+        user: user,
+        channel: channel,
+      }),
+    });
+  } catch (error) {
+    logger.error(error);
+  }
+});
 
 // --------------  CONFIG --------------
 const app = new App({
