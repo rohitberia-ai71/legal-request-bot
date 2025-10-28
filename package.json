@@ -1,0 +1,13 @@
+{
+  "name": "legal-request-bot",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@slack/bolt": "^3.18.0",
+    "node-fetch": "^3.3.2"
+  }
+}
