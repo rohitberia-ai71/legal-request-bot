@@ -1,5 +1,6 @@
-import { App } from "@slack/bolt";
-import fetch from "node-fetch";
+const { App } = require("@slack/bolt");
+const fetch = require("node-fetch");
+
 
 // --------------  CONFIG --------------
 const app = new App({
