@@ -1,5 +1,5 @@
-import { App } from "@slack/bolt";
-import fetch from "node-fetch";
+const { App } = require("@slack/bolt");
+const fetch = require("node-fetch");
 
 // These will come from Render as environment variables
 const app = new App({
