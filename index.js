@@ -1,32 +1,32 @@
 // ===============================
-// AI71 Legal Request Bot (Fixed for Render + CommonJS)
+// AI71 Legal Request Bot (Render-Compatible)
 // ===============================
 
 const { App, ExpressReceiver } = require("@slack/bolt");
-const express = require("express");
 const fetch = require("node-fetch");
 
 // -------------------------------
-// 1. Initialize a custom receiver
+// 1. Create ExpressReceiver (handles /slack/events)
 // -------------------------------
 const receiver = new ExpressReceiver({
   signingSecret: process.env.SLACK_SIGNING_SECRET
 });
 
 // -------------------------------
-// 2. Create Slack Bolt App
+// 2. Initialize Slack App
 // -------------------------------
 const app = new App({
   token: process.env.SLACK_BOT_TOKEN,
   receiver
 });
 
-const expressApp = receiver.app; // use Bolt’s internal express app
+const expressApp = receiver.app; // This exposes the internal Express app
+const PORT = process.env.PORT || 3000;
 const APPS_SCRIPT_URL = process.env.APPS_SCRIPT_URL;
 
-// ===============================
-// Slash command: /legal
-// ===============================
+// -------------------------------
+// 3. Slash Command: /legal
+// -------------------------------
 app.command("/legal", async ({ ack, body, client }) => {
   await ack();
   try {
@@ -46,6 +46,7 @@ app.command("/legal", async ({ ack, body, client }) => {
             element: {
               type: "static_select",
               action_id: "request_type",
+              placeholder: { type: "plain_text", text: "Select type" },
               options: [
                 { text: { type: "plain_text", text: "Procurement" }, value: "Procurement" },
                 { text: { type: "plain_text", text: "Revenue / Collaboration" }, value: "Revenue / Collaboration" },
@@ -80,9 +81,9 @@ app.command("/legal", async ({ ack, body, client }) => {
   }
 });
 
-// ===============================
-// Modal submission handler
-// ===============================
+// -------------------------------
+// 4. Handle modal submission
+// -------------------------------
 app.view("legal_request_form", async ({ ack, body, view, client }) => {
   await ack();
   try {
@@ -91,7 +92,7 @@ app.view("legal_request_form", async ({ ack, body, view, client }) => {
     const counterparty = view.state.values.counterparty_block.counterparty_input.value;
     const description = view.state.values.description_block.description_input.value;
 
-    const post = await client.chat.postMessage({
+    const message = await client.chat.postMessage({
       channel: process.env.LEGAL_CHANNEL_ID,
       text: `🧾 *New Legal Request Submitted by* ${user}`,
       blocks: [
@@ -105,7 +106,7 @@ app.view("legal_request_form", async ({ ack, body, view, client }) => {
       ]
     });
 
-    const threadTs = post.ts;
+    const threadTs = message.ts;
 
     await fetch(APPS_SCRIPT_URL, {
       method: "POST",
@@ -116,24 +117,24 @@ app.view("legal_request_form", async ({ ack, body, view, client }) => {
         counterparty,
         description,
         submittedBy: user,
-        channel: post.channel,
+        channel: message.channel,
         thread_ts: threadTs
       })
     });
 
     await client.chat.postMessage({
-      channel: post.channel,
+      channel: message.channel,
       thread_ts: threadTs,
-      text: "✅ Request recorded. Please upload related files in this thread."
+      text: "✅ Request logged successfully. Upload related files in this thread."
     });
   } catch (err) {
-    console.error("❌ Error submitting request:", err);
+    console.error("❌ Error handling modal:", err);
   }
 });
 
-// ===============================
-// File upload event handler
-// ===============================
+// -------------------------------
+// 5. Handle file uploads
+// -------------------------------
 app.event("message", async ({ event, client }) => {
   try {
     if (event.subtype !== "file_share" || !event.thread_ts) return;
@@ -142,7 +143,7 @@ app.event("message", async ({ event, client }) => {
     if (!file) return;
 
     const info = await client.files.info({ file: file.id });
-    const url = info.file.url_private_download;
+    const fileUrl = info.file.url_private_download;
 
     await fetch(APPS_SCRIPT_URL, {
       method: "POST",
@@ -152,29 +153,29 @@ app.event("message", async ({ event, client }) => {
         channel: event.channel,
         thread_ts: event.thread_ts,
         fileName: info.file.name,
-        fileUrl: url
+        fileUrl
       })
     });
 
     await client.chat.postMessage({
       channel: event.channel,
       thread_ts: event.thread_ts,
-      text: `📎 File *${file.name}* uploaded successfully.`
+      text: `📎 File *${file.name}* uploaded and saved successfully.`
     });
   } catch (err) {
-    console.error("❌ File upload handler error:", err);
+    console.error("❌ File upload error:", err);
   }
 });
 
-// ===============================
-// Health check endpoint for Render
-// ===============================
-expressApp.get("/", (req, res) => res.send("✅ AI71 Legal Request Bot is live"));
+// -------------------------------
+// 6. Health check route for Render
+// -------------------------------
+expressApp.get("/", (req, res) => res.send("✅ AI71 Legal Request Bot is live and healthy!"));
 
-// ===============================
-// Start server
-// ===============================
+// -------------------------------
+// 7. Start app
+// -------------------------------
 (async () => {
-  await app.start(process.env.PORT || 3000);
-  console.log("⚡️ AI71 Legal Request Bot running on port", process.env.PORT || 3000);
+  await app.start(PORT);
+  console.log(`⚡️ AI71 Legal Request Bot running on port ${PORT}`);
 })();
